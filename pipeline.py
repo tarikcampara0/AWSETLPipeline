@@ -147,3 +147,50 @@ def lambda_transform_handler(event: dict) -> dict:
         "transformed_rows": transformed_rows,
         "checksum": file_checksum(out_path),
     }
+# Load / Aggregate
+def load_and_aggregate():
+    """Reads all transformed parquet files and builds final summary tables."""
+    parquet_files = list(BUCKET_PROCESSED.glob("*.parquet"))
+    if not parquet_files:
+        log.warning("No processed files found.")
+        return None
+
+    log.info(f"LOAD — Reading {len(parquet_files)} parquet files...")
+    df = pd.concat([pd.read_parquet(f) for f in parquet_files], ignore_index=True)
+    log.info(f"  Combined dataset: {len(df):,} rows")
+
+    os.makedirs("output", exist_ok=True)
+
+    # Daily revenue summary
+    daily = df.groupby("date").agg(
+        transactions=("transaction_id", "count"),
+        revenue=("net_revenue", "sum"),
+        avg_order=("net_revenue", "mean"),
+        unique_customers=("customer_id", "nunique"),
+    ).reset_index()
+    daily.to_csv("output/daily_summary.csv", index=False)
+
+    # Category performance
+    cat = df.groupby("category").agg(
+        revenue=("net_revenue", "sum"),
+        transactions=("transaction_id", "count"),
+        avg_discount=("discount_pct", "mean"),
+    ).reset_index().sort_values("revenue", ascending=False)
+    cat.to_csv("output/category_summary.csv", index=False)
+
+    # Source / channel breakdown
+    source = df.groupby("source").agg(
+        revenue=("net_revenue", "sum"),
+        transactions=("transaction_id", "count"),
+    ).reset_index()
+    source.to_csv("output/source_summary.csv", index=False)
+
+    # Country summary
+    country = df.groupby("country")["net_revenue"].sum().reset_index(name="revenue")
+    country.to_csv("output/country_summary.csv", index=False)
+
+    # Final combined
+    df.to_parquet("output/final_dataset.parquet", index=False)
+
+    log.info("  Saved all summary CSVs and final parquet to output/")
+    return df, daily, cat
