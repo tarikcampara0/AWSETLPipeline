@@ -194,3 +194,66 @@ def load_and_aggregate():
 
     log.info("  Saved all summary CSVs and final parquet to output/")
     return df, daily, cat
+# pipeline runner 
+def run_pipeline():
+    log.info("=" * 60)
+    log.info("  AWS ETL PIPELINE — LOCAL SIMULATION")
+    log.info("=" * 60)
+
+    manifest = load_manifest()
+    t_start  = time.time()
+
+    # 1. Ingest
+    landed_files = ingest_raw_data(n_files=4, rows_per_file=5000)
+
+    # 2. Transform (Lambda invocations)
+    log.info("\nTRANSFORM — Invoking Lambda handlers...")
+    run_results = []
+    for filename in landed_files:
+        if filename in manifest["processed_files"]:
+            log.info(f"  Skipping (already processed): {filename}")
+            continue
+        event = {"Records": [{"s3": {"object": {"key": filename}}}]}
+        result = lambda_transform_handler(event)
+        run_results.append(result)
+        manifest["processed_files"].append(filename)
+
+    # 3. Load & aggregate
+    log.info("\nAGGREGATE — Building summary tables...")
+    output = load_and_aggregate()
+
+    # 4. Log run
+    elapsed = round(time.time() - t_start, 2)
+    run_entry = {
+        "run_time":        datetime.now().isoformat(),
+        "files_processed": len(run_results),
+        "elapsed_seconds": elapsed,
+        "status":          "SUCCESS",
+    }
+    manifest["run_log"].append(run_entry)
+    save_manifest(manifest)
+
+    # 5. Summary
+    log.info("\n" + "=" * 60)
+    log.info("  PIPELINE COMPLETE")
+    log.info(f"  Files processed  : {len(run_results)}")
+    log.info(f"  Manifest updated : {MANIFEST_FILE}")
+    log.info("=" * 60)
+
+    if output:
+        df, daily, cat = output
+        log.info(f"\n  Total Net Revenue : ${df['net_revenue'].sum():>12,.2f}")
+        log.info(f"  Total Transactions: {len(df):>12,}")
+        log.info(f"\n  Top Category      : {cat.iloc[0]['category']}  "
+                 f"(${cat.iloc[0]['revenue']:,.2f})")
+
+
+if __name__ == "__main__":
+    # Clean up any prior run for a fresh demo
+    for bucket in [BUCKET_LANDING, BUCKET_PROCESSED, BUCKET_ARCHIVE]:
+        shutil.rmtree(bucket, ignore_errors=True)
+        bucket.mkdir(parents=True, exist_ok=True)
+    if Path("output").exists():
+        shutil.rmtree("output")
+
+    run_pipeline()
