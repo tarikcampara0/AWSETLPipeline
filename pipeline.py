@@ -84,3 +84,66 @@ def ingest_raw_data(n_files=4, rows_per_file=5000):
         files_written.append(filename)
         log.info(f"  Landed: {filename}  ({rows_per_file:,} rows)")
     return files_written 
+
+ # Step 2: Transform — Lambda-style function
+def lambda_transform_handler(event: dict) -> dict:
+    """
+    Mimics an AWS Lambda handler triggered by S3 PutObject events.
+    Applies transformations and loads to the Processed bucket.
+    """
+    filename = event["Records"][0]["s3"]["object"]["key"]
+    source_path = BUCKET_LANDING / filename
+    log.info(f"  Lambda triggered for: {filename}")
+
+    df = pd.read_csv(source_path, parse_dates=["timestamp"])
+    original_rows = len(df)
+
+    # Transformations
+    # 1. Deduplicate on transaction_id
+    df = df.drop_duplicates(subset=["transaction_id"])
+
+    # 2. Drop cancelled / pending transactions
+    df = df[df["status"] == "completed"]
+
+    # 3. Compute net revenue after discount
+    df["net_revenue"] = (df["total"] * (1 - df["discount_pct"] / 100)).round(2)
+
+    # 4. Parse date parts
+    df["date"]    = df["timestamp"].dt.date
+    df["hour"]    = df["timestamp"].dt.hour
+    df["weekday"] = df["timestamp"].dt.day_name()
+
+    # 5. Tag high-value transactions
+    threshold = df["net_revenue"].quantile(0.90)
+    df["is_high_value"] = df["net_revenue"] >= threshold
+
+    # 6. Standardise country codes
+    df["country"] = df["country"].str.upper().str.strip()
+
+    # 7. Remove outliers: net_revenue < 0 or > 99th percentile
+    p99 = df["net_revenue"].quantile(0.99)
+    df = df[(df["net_revenue"] > 0) & (df["net_revenue"] <= p99)]
+
+    transformed_rows = len(df)
+    drop_pct = (1 - transformed_rows / original_rows) * 100
+
+    log.info(f"    Rows: {original_rows:,} → {transformed_rows:,}  "
+             f"(dropped {drop_pct:.1f}%)")
+
+    # Write to Processed bucket 
+    out_name = filename.replace(".csv", "_transformed.parquet")
+    out_path = BUCKET_PROCESSED / out_name
+    df.to_parquet(out_path, index=False)
+    log.info(f"    Saved: {out_name}")
+
+    # Archive raw file 
+    shutil.move(str(source_path), str(BUCKET_ARCHIVE / filename))
+
+    return {
+        "statusCode": 200,
+        "source_file": filename,
+        "output_file": out_name,
+        "original_rows": original_rows,
+        "transformed_rows": transformed_rows,
+        "checksum": file_checksum(out_path),
+    }
