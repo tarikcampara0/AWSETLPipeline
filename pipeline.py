@@ -237,6 +237,7 @@ def run_pipeline():
     log.info("\n" + "=" * 60)
     log.info("  PIPELINE COMPLETE")
     log.info(f"  Files processed  : {len(run_results)}")
+    log.info (f"     elapsed      : {elapsed}s")
     log.info(f"  Manifest updated : {MANIFEST_FILE}")
     log.info("=" * 60)
 
