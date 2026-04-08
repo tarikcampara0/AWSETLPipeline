@@ -47,4 +47,43 @@ def deploy(landing_bucket: str, processed_bucket: str, region: str):
     s3_client  = session.client("s3")
     lam_client = session.client("lambda")
     iam_client = session.client("iam")
-    
+    for bucket in [landing_bucket, processed_bucket]:
+        try:
+            if region == "us-east-1":
+                s3_client.create_bucket(Bucket=bucket)
+            else:
+                s3_client.create_bucket(
+                    Bucket=bucket,
+                    CreateBucketConfiguration={"LocationConstraint": region}
+                )
+            print(f"Created bucket: {bucket}")
+        except s3_client.exceptions.BucketAlreadyOwnedByYou:
+            print(f"Bucket exists: {bucket}")
+
+    # Create IAM role for Lambda
+    trust_policy = json.dumps({
+        "Version": "2012-10-17",
+        "Statement": [{
+            "Effect": "Allow",
+            "Principal": {"Service": "lambda.amazonaws.com"},
+            "Action":  "sts:AssumeRole"
+                }]
+    })
+    try:
+        role = iam_client.create_role(
+            RoleName="ETLLambdaRole",
+            AssumeRolePolicyDocument=trust_policy,
+        )
+        role_arn = role["Role"]["Arn"]
+        iam_client.attach_role_policy(
+            RoleName="ETLLambdaRole",
+            PolicyArn="arn:aws:iam::aws:policy/AmazonS3FullAccess"
+        )
+        iam_client.attach_role_policy(
+            RoleName="ETLLambdaRole",
+            PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        )
+        print(f"Created IAM role: {role_arn}")
+    except iam_client.exceptions.EntityAlreadyExistsException:
+        role_arn = iam_client.get_role(RoleName="ETLLambdaRole")["Role"]["Arn"]
+        print(f"IAM role exists: {role_arn}")
