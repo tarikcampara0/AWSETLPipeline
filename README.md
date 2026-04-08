@@ -2,9 +2,9 @@
 # ☁️ AWS ETL Data Pipeline
 
 *required to run*
-pandas>=2.0.0
-numpy>=1.24.0
-pyarrow>=12.0.0
+pandas>=2.0.0|
+numpy>=1.24.0|
+pyarrow>=12.0.0|
 boto3>=1.28.0
 
 
