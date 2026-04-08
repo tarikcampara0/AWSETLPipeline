@@ -112,3 +112,35 @@ def deploy(landing_bucket: str, processed_bucket: str, region: str):
     except lam_client.exceptions.ResourceConflictException:
         lam_client.update_function_code(FunctionName=func_name, ZipFile=zip_bytes)
         print(f"Updated Lambda function: {func_name}")
+
+        # add S3 trigger
+    account_id = boto3.client("sts").get_caller_identity()["Account"]
+    lam_client.add_permission(
+        FunctionName=func_name,
+        StatementId="S3InvokeLambda",
+        Action="lambda:InvokeFunction",
+        Principal="s3.amazonaws.com",
+        SourceArn=f"arn:aws:s3:::{landing_bucket}",
+        SourceAccount=account_id,
+    )
+
+    s3_client.put_bucket_notification_configuration(
+        Bucket=landing_bucket,
+        NotificationConfiguration={
+            "LambdaFunctionConfigurations": [{
+                "LambdaFunctionArn": f"arn:aws:lambda:{region}:{account_id}:function:{func_name}",
+                "Events": ["s3:ObjectCreated:*"],
+                "Filter": {"Key": {"FilterRules": [{"Name": "suffix", "Value": ".csv"}]}}
+            }]
+        }
+    )
+    print(f"\nDeploy complete! Any CSV dropped into s3://{landing_bucket}/ will auto-trigger the Lambda.")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bucket-landing",   required=True)
+    parser.add_argument("--bucket-processed", required=True)
+    parser.add_argument("--region",           default="us-east-1")
+    args = parser.parse_args()
+    deploy(args.bucket_landing, args.bucket_processed, args.region)        
