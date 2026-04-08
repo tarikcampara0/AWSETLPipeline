@@ -38,7 +38,7 @@ def handler(event, context):
 def create_lambda_zip():
     zip_path = Path("/tmp/etl_lambda.zip")
     with zipfile.ZipFile(zip_path, "w") as z:
-        z.writestr("lambda_function.py", LAMBDA_HANDLER_CODE)
+        z.writestr("lambda_function.py", LAMBDA_HANDLER)
     return zip_path
 
 
@@ -89,3 +89,26 @@ def deploy(landing_bucket: str, processed_bucket: str, region: str):
         print(f"IAM role exists: {role_arn}")
 
     import time; time.sleep(10)  #role propagation
+
+
+    # deploy lambda
+    zip_path = create_lambda_zip()
+    func_name = "etl-transform"
+    with open(zip_path, "rb") as zf:
+        zip_bytes = zf.read()
+
+    try:
+        lam_client.create_function(
+            FunctionName=func_name,
+            Runtime="python3.11",
+            Role=role_arn,
+            Handler="lambda_function.handler",
+            Code={"ZipFile": zip_bytes},
+            Environment={"Variables": {"DEST_BUCKET": processed_bucket}},
+            Timeout=300,
+            MemorySize=512,
+        )
+        print(f"Created Lambda function: {func_name}")
+    except lam_client.exceptions.ResourceConflictException:
+        lam_client.update_function_code(FunctionName=func_name, ZipFile=zip_bytes)
+        print(f"Updated Lambda function: {func_name}")
