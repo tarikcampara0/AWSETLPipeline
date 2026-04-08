@@ -1,11 +1,12 @@
 # AWSETLPipeline
 # ☁️ AWS ETL Data Pipeline
-*required*
+
+*required to run*
 pandas>=2.0.0
 numpy>=1.24.0
 pyarrow>=12.0.0
 boto3>=1.28.0
-*required*
+
 
 An end-to-end ETL pipeline that automates ingestion and transformation of structured transactional datasets. Runs locally out of the box, with optional deployment to real AWS (S3 + Lambda).
 
