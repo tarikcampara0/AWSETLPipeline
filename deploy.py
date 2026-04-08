@@ -87,3 +87,5 @@ def deploy(landing_bucket: str, processed_bucket: str, region: str):
     except iam_client.exceptions.EntityAlreadyExistsException:
         role_arn = iam_client.get_role(RoleName="ETLLambdaRole")["Role"]["Arn"]
         print(f"IAM role exists: {role_arn}")
+
+    import time; time.sleep(10)  #role propagation
