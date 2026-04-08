@@ -35,3 +35,16 @@ def handler(event, context):
 
     return {"statusCode": 200, "output_key": out_key, "rows": len(df)}
 '''
+def create_lambda_zip():
+    zip_path = Path("/tmp/etl_lambda.zip")
+    with zipfile.ZipFile(zip_path, "w") as z:
+        z.writestr("lambda_function.py", LAMBDA_HANDLER_CODE)
+    return zip_path
+
+
+def deploy(landing_bucket: str, processed_bucket: str, region: str):
+    session    = boto3.Session(region_name=region)
+    s3_client  = session.client("s3")
+    lam_client = session.client("lambda")
+    iam_client = session.client("iam")
+    
