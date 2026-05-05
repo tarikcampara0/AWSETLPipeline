@@ -85,7 +85,7 @@ def ingest_raw_data(n_files=4, rows_per_file=5000):
         log.info(f"  Landed: {filename}  ({rows_per_file:,} rows)")
     return files_written 
 
- # Step 2: Transform — Lambda-style function
+ # Lambda-style function
 def lambda_transform_handler(event: dict) -> dict:
     """
     Mimics an AWS Lambda handler triggered by S3 PutObject events.
